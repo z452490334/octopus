@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/bestruirui/octopus/internal/relay"
+	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/router"
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
@@ -30,6 +31,14 @@ func init() {
 			router.NewRoute("/embeddings", http.MethodPost).
 				Handle(embedding),
 		)
+
+	router.NewGroupRouter("/v1beta").
+		Use(middleware.APIKeyAuth()).
+		Use(middleware.RequireJSON()).
+		AddRoute(
+			router.NewRoute("/models/*geminiRest", http.MethodPost).
+				Handle(geminiGenerate),
+		)
 }
 
 func chat(c *gin.Context) {
@@ -43,4 +52,12 @@ func message(c *gin.Context) {
 }
 func embedding(c *gin.Context) {
 	relay.Handler(inbound.InboundTypeOpenAIEmbedding, c)
+}
+
+func geminiGenerate(c *gin.Context) {
+	if _, _, ok := relay.ParseGeminiPathForRequest(c.Request.URL.Path); !ok {
+		resp.Error(c, http.StatusNotFound, "unsupported Gemini path; use :generateContent or :streamGenerateContent")
+		return
+	}
+	relay.Handler(inbound.InboundTypeGemini, c)
 }

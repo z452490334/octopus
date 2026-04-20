@@ -231,6 +231,20 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.Inter
 	// Pass through the original query parameters
 	internalRequest.Query = c.Request.URL.Query()
 
+	if inboundType == inbound.InboundTypeGemini {
+		if modelName, streamFromPath, ok := parseGeminiPath(c.Request.URL.Path); ok {
+			internalRequest.Model = modelName
+			stream := streamFromPath || c.Query("alt") == "sse"
+			if stream {
+				t := true
+				internalRequest.Stream = &t
+			} else {
+				f := false
+				internalRequest.Stream = &f
+			}
+		}
+	}
+
 	if err := internalRequest.Validate(); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return nil, nil, err
