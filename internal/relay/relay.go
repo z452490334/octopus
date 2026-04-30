@@ -450,6 +450,7 @@ func (ra *relayAttempt) handleResponse(ctx context.Context, response *http.Respo
 		log.Warnf("failed to transform response: %v", err)
 		return fmt.Errorf("failed to transform outbound response: %w", err)
 	}
+	normalizeResponseShape(internalResponse, ra.internalRequest.Model)
 
 	inResponse, err := ra.inAdapter.TransformResponse(ctx, internalResponse)
 	if err != nil {
