@@ -165,28 +165,26 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	if m.InternalRequest != nil {
 		reqJSON, jsonErr := json.Marshal(m.InternalRequest)
 		if jsonErr != nil {
-			relayLog.RequestContent = string(reqJSON)
-			return
-		}
-		if m.ParamOverride == "" {
-			relayLog.RequestContent = string(reqJSON)
-			return
-		}
-		var reqMap map[string]any
-		if err := json.Unmarshal(reqJSON, &reqMap); err != nil {
-			relayLog.RequestContent = string(reqJSON)
-			return
-		}
-		var override map[string]any
-		if err := json.Unmarshal([]byte(m.ParamOverride), &override); err != nil {
-			relayLog.RequestContent = string(reqJSON)
-			return
-		}
-		maps.Copy(reqMap, override)
-		if finalJSON, err := json.Marshal(reqMap); err != nil {
+			relayLog.RequestContent = ""
+		} else if m.ParamOverride == "" {
 			relayLog.RequestContent = string(reqJSON)
 		} else {
-			relayLog.RequestContent = string(finalJSON)
+			var reqMap map[string]any
+			if err := json.Unmarshal(reqJSON, &reqMap); err != nil {
+				relayLog.RequestContent = string(reqJSON)
+			} else {
+				var override map[string]any
+				if err := json.Unmarshal([]byte(m.ParamOverride), &override); err != nil {
+					relayLog.RequestContent = string(reqJSON)
+				} else {
+					maps.Copy(reqMap, override)
+					if finalJSON, err := json.Marshal(reqMap); err != nil {
+						relayLog.RequestContent = string(reqJSON)
+					} else {
+						relayLog.RequestContent = string(finalJSON)
+					}
+				}
+			}
 		}
 	}
 
