@@ -1,6 +1,8 @@
 services:
   octopus:
-    image: bestrui/octopus
+    image: ghcr.io/z452490334/octopus:latest
+    environment:
+       - 'OCTOPUS_GITHUB_REPO=z452490334/octopus'
     ports:
        - '8080:8080'
     volumes:      
