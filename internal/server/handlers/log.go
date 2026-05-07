@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/server/middleware"
@@ -109,11 +110,16 @@ func streamLog(c *gin.Context) {
 	defer op.RelayLogUnsubscribe(logChan)
 
 	ctx := c.Request.Context()
+	heartbeatTicker := time.NewTicker(20 * time.Second)
+	defer heartbeatTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-heartbeatTicker.C:
+			c.Writer.Write([]byte(": ping\n\n"))
+			c.Writer.Flush()
 		case log, ok := <-logChan:
 			if !ok {
 				return

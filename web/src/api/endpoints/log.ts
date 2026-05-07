@@ -99,10 +99,14 @@ const logsInfiniteQueryKey = (pageSize: number) => ['logs', 'infinite', pageSize
  */
 export function useLogs(options: { pageSize?: number } = {}) {
     const { pageSize = 20 } = options;
+    const reconnectDelayBaseMs = 1000;
+    const reconnectDelayMaxMs = 30000;
 
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<Error | null>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
+    const reconnectAttemptsRef = useRef(0);
+    const reconnectTimerRef = useRef<number | null>(null);
 
     const queryClient = useQueryClient();
 
@@ -155,8 +159,31 @@ export function useLogs(options: { pageSize?: number } = {}) {
     useEffect(() => {
         let cancelled = false;
 
+        const clearReconnectTimer = () => {
+            if (reconnectTimerRef.current !== null) {
+                window.clearTimeout(reconnectTimerRef.current);
+                reconnectTimerRef.current = null;
+            }
+        };
+
+        const scheduleReconnect = () => {
+            if (cancelled) return;
+            clearReconnectTimer();
+            reconnectAttemptsRef.current += 1;
+            const delay = Math.min(
+                reconnectDelayBaseMs * 2 ** Math.max(reconnectAttemptsRef.current-1, 0),
+                reconnectDelayMaxMs
+            );
+            reconnectTimerRef.current = window.setTimeout(() => {
+                reconnectTimerRef.current = null;
+                void connect();
+            }, delay);
+        };
+
         const connect = async () => {
             try {
+                eventSourceRef.current?.close();
+                eventSourceRef.current = null;
                 const { token } = await apiClient.get<{ token: string }>('/api/v1/log/stream-token');
                 if (cancelled) return;
 
@@ -166,6 +193,8 @@ export function useLogs(options: { pageSize?: number } = {}) {
                 eventSource.onopen = () => {
                     setIsConnected(true);
                     setError(null);
+                    reconnectAttemptsRef.current = 0;
+                    clearReconnectTimer();
                 };
 
                 eventSource.onmessage = (event) => {
@@ -195,11 +224,13 @@ export function useLogs(options: { pageSize?: number } = {}) {
                     setError(new Error('SSE 连接断开'));
                     eventSource.close();
                     eventSourceRef.current = null;
+                    scheduleReconnect();
                 };
             } catch (e) {
                 if (cancelled) return;
                 setError(e instanceof Error ? e : new Error('获取 stream token 失败'));
                 logger.error('获取 stream token 失败:', e);
+                scheduleReconnect();
             }
         };
 
@@ -207,11 +238,12 @@ export function useLogs(options: { pageSize?: number } = {}) {
 
         return () => {
             cancelled = true;
+            clearReconnectTimer();
             eventSourceRef.current?.close();
             eventSourceRef.current = null;
             setIsConnected(false);
         };
-    }, [pageSize, queryClient]);
+    }, [pageSize, queryClient, reconnectDelayBaseMs, reconnectDelayMaxMs]);
 
     const clear = useCallback(() => {
         queryClient.removeQueries({ queryKey: logsInfiniteQueryKey(pageSize) });
