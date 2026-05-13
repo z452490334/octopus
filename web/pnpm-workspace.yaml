@@ -1,3 +1,7 @@
+# Single-package “workspace”: pnpm requires non-empty `packages` when this file exists.
+packages:
+  - '.'
+
 allowBuilds:
   '@swc/core': true
   sharp: true
