@@ -22,6 +22,10 @@ func init() {
 				Handle(getGroupList),
 		).
 		AddRoute(
+			router.NewRoute("/detail/:id", http.MethodGet).
+				Handle(getGroupDetail),
+		).
+		AddRoute(
 			router.NewRoute("/create", http.MethodPost).
 				Handle(createGroup),
 		).
@@ -40,12 +44,27 @@ func init() {
 }
 
 func getGroupList(c *gin.Context) {
-	groups, err := op.GroupList(c.Request.Context())
+	summaries, err := op.GroupListSummaries(c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	resp.Success(c, groups)
+	resp.Success(c, summaries)
+}
+
+func getGroupDetail(c *gin.Context) {
+	id := c.Param("id")
+	idNum, err := strconv.Atoi(id)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	group, err := op.GroupGet(idNum, c.Request.Context())
+	if err != nil {
+		resp.Error(c, http.StatusNotFound, err.Error())
+		return
+	}
+	resp.Success(c, group)
 }
 
 func createGroup(c *gin.Context) {

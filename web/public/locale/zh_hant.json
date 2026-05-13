@@ -357,6 +357,9 @@
             "empty": "暫無規則"
         },
         "detail": {
+            "loading": "正在載入分組詳情…",
+            "loadFailed": "載入失敗",
+            "retry": "重試",
             "actions": {
                 "edit": "編輯",
                 "cancel": "取消",

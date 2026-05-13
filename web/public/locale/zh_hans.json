@@ -357,6 +357,9 @@
             "empty": "暂无规则"
         },
         "detail": {
+            "loading": "正在加载分组详情…",
+            "loadFailed": "加载失败",
+            "retry": "重试",
             "actions": {
                 "edit": "编辑",
                 "cancel": "取消",

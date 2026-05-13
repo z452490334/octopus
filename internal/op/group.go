@@ -22,6 +22,23 @@ func GroupList(ctx context.Context) ([]model.Group, error) {
 	return groups, nil
 }
 
+// GroupListSummaries 返回分组列表摘要（不含 items，仅 item 数量）
+func GroupListSummaries(ctx context.Context) ([]model.GroupSummary, error) {
+	out := make([]model.GroupSummary, 0, groupCache.Len())
+	for _, g := range groupCache.GetAll() {
+		out = append(out, model.GroupSummary{
+			ID:                g.ID,
+			Name:              g.Name,
+			Mode:              g.Mode,
+			MatchRegex:        g.MatchRegex,
+			FirstTokenTimeOut: g.FirstTokenTimeOut,
+			SessionKeepTime:   g.SessionKeepTime,
+			ItemCount:         len(g.Items),
+		})
+	}
+	return out, nil
+}
+
 func GroupListModel(ctx context.Context) ([]string, error) {
 	models := []string{}
 	for _, group := range groupCache.GetAll() {

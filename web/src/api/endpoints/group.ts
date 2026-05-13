@@ -37,6 +37,17 @@ export interface Group {
     items?: GroupItem[];
 }
 
+/** 列表接口返回的精简分组（无 items，含 item_count） */
+export interface GroupSummary {
+    id: number;
+    name: string;
+    mode: GroupMode;
+    match_regex: string;
+    first_token_time_out?: number;
+    session_keep_time?: number;
+    item_count: number;
+}
+
 /**
  * 新增 item 请求
  */
@@ -80,16 +91,31 @@ export interface GroupUpdateRequest {
  * if (isLoading) return <Loading />;
  * if (error) return <Error message={error.message} />;
  * 
- * groups?.forEach(group => console.log(group.name, group.items));
+ * groups?.forEach(group => console.log(group.name, group.item_count));
  */
 export function useGroupList() {
     return useQuery({
         queryKey: ['groups', 'list'],
         queryFn: async () => {
-            return apiClient.get<Group[]>('/api/v1/group/list');
+            return apiClient.get<GroupSummary[]>('/api/v1/group/list');
         },
         refetchInterval: 30000,
         refetchOnMount: 'always',
+    });
+}
+
+/**
+ * 获取单个分组详情（含 items），用于编辑页按需加载
+ */
+export function useGroupDetail(id: number | null | undefined, options?: { enabled?: boolean }) {
+    const enabled =
+        (options?.enabled ?? true) && typeof id === 'number' && id > 0;
+    return useQuery({
+        queryKey: ['groups', 'detail', id],
+        queryFn: async () => {
+            return apiClient.get<Group>(`/api/v1/group/detail/${id}`);
+        },
+        enabled,
     });
 }
 
@@ -116,6 +142,9 @@ export function useCreateGroup() {
         onSuccess: (data) => {
             logger.log('分组创建成功:', data);
             queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+            if (data?.id != null) {
+                queryClient.invalidateQueries({ queryKey: ['groups', 'detail', data.id] });
+            }
         },
         onError: (error) => {
             logger.error('分组创建失败:', error);
@@ -147,6 +176,9 @@ export function useUpdateGroup() {
         onSuccess: (data) => {
             logger.log('分组更新成功:', data);
             queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+            if (data?.id != null) {
+                queryClient.invalidateQueries({ queryKey: ['groups', 'detail', data.id] });
+            }
         },
         onError: (error) => {
             logger.error('分组更新失败:', error);
@@ -169,9 +201,10 @@ export function useDeleteGroup() {
         mutationFn: async (id: number) => {
             return apiClient.delete<null>(`/api/v1/group/delete/${id}`);
         },
-        onSuccess: () => {
+        onSuccess: (_data, id) => {
             logger.log('分组删除成功');
             queryClient.invalidateQueries({ queryKey: ['groups', 'list'] });
+            queryClient.invalidateQueries({ queryKey: ['groups', 'detail', id] });
         },
         onError: (error) => {
             logger.error('分组删除失败:', error);

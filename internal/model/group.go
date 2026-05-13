@@ -19,6 +19,17 @@ type Group struct {
 	Items             []GroupItem `json:"items,omitempty" gorm:"foreignKey:GroupID"`
 }
 
+// GroupSummary 列表接口返回的精简数据（不含 items，避免大分组拖慢前端）
+type GroupSummary struct {
+	ID                int       `json:"id"`
+	Name              string    `json:"name"`
+	Mode              GroupMode `json:"mode"`
+	MatchRegex        string    `json:"match_regex"`
+	FirstTokenTimeOut int       `json:"first_token_time_out"`
+	SessionKeepTime   int       `json:"session_keep_time"`
+	ItemCount         int       `json:"item_count"`
+}
+
 type GroupItem struct {
 	ID        int    `json:"id" gorm:"primaryKey"`
 	GroupID   int    `json:"group_id" gorm:"not null;index:idx_group_channel_model,unique"` // 创建时不携带此字段,更新时需要

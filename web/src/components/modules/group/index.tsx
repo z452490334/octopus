@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { GroupCard } from './Card';
-import { useGroupList } from '@/api/endpoints/group';
+import { useGroupList, type GroupSummary } from '@/api/endpoints/group';
 import { useSearchStore, useToolbarViewOptionsStore } from '@/components/modules/toolbar';
 import { VirtualizedGrid } from '@/components/common/VirtualizedGrid';
 
@@ -14,7 +14,7 @@ export function Group() {
     const sortOrder = useToolbarViewOptionsStore((s) => s.getSortOrder(pageKey));
     const filter = useToolbarViewOptionsStore((s) => s.groupFilter);
 
-    const sortedGroups = useMemo(() => {
+    const sortedGroups = useMemo((): GroupSummary[] => {
         if (!groups) return [];
         return [...groups].sort((a, b) => {
             const diff = sortField === 'name'
@@ -28,19 +28,19 @@ export function Group() {
         const term = searchTerm.toLowerCase().trim();
         const byName = !term ? sortedGroups : sortedGroups.filter((g) => g.name.toLowerCase().includes(term));
 
-        if (filter === 'with-members') return byName.filter((g) => (g.items?.length || 0) > 0);
-        if (filter === 'empty') return byName.filter((g) => (g.items?.length || 0) === 0);
+        if (filter === 'with-members') return byName.filter((g) => g.item_count > 0);
+        if (filter === 'empty') return byName.filter((g) => g.item_count === 0);
 
         return byName;
     }, [sortedGroups, searchTerm, filter]);
 
     return (
-        <VirtualizedGrid
+        <VirtualizedGrid<GroupSummary>
             items={visibleGroups}
             columns={{ default: 1, md: 2, lg: 3 }}
-            estimateItemHeight={520}
+            estimateItemHeight={100}
             getItemKey={(group, index) => group.id ?? `group-${index}`}
-            renderItem={(group) => <GroupCard group={group} />}
+            renderItem={(group) => <GroupCard summary={group} />}
         />
     );
 }

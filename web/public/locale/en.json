@@ -357,6 +357,9 @@
             "empty": "No rules"
         },
         "detail": {
+            "loading": "Loading group details…",
+            "loadFailed": "Failed to load",
+            "retry": "Retry",
             "actions": {
                 "edit": "Edit",
                 "cancel": "Cancel",
