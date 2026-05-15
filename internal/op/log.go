@@ -15,6 +15,7 @@ import (
 
 const relayLogMaxSize = 20
 const relayLogMaxSizeNoDB = 100 // 当不保存到数据库时，允许更大的缓存用于实时查询
+const relayLogStreamTokenTTL = 2 * time.Minute
 
 var relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
 var relayLogCacheLock sync.Mutex
@@ -24,7 +25,7 @@ var relayLogFlushLock sync.Mutex
 var relayLogSubscribers = make(map[chan model.RelayLog]struct{})
 var relayLogSubscribersLock sync.RWMutex
 
-var relayLogStreamTokens = make(map[string]struct{})
+var relayLogStreamTokens = make(map[string]time.Time)
 var relayLogStreamTokensLock sync.RWMutex
 
 func RelayLogStreamTokenCreate() (string, error) {
@@ -35,16 +36,23 @@ func RelayLogStreamTokenCreate() (string, error) {
 	token := hex.EncodeToString(bytes)
 
 	relayLogStreamTokensLock.Lock()
-	relayLogStreamTokens[token] = struct{}{}
+	cleanupExpiredRelayLogStreamTokensLocked(time.Now())
+	relayLogStreamTokens[token] = time.Now().Add(relayLogStreamTokenTTL)
 	relayLogStreamTokensLock.Unlock()
 
 	return token, nil
 }
 
 func RelayLogStreamTokenVerify(token string) bool {
-	relayLogStreamTokensLock.RLock()
-	_, ok := relayLogStreamTokens[token]
-	relayLogStreamTokensLock.RUnlock()
+	now := time.Now()
+	relayLogStreamTokensLock.Lock()
+	cleanupExpiredRelayLogStreamTokensLocked(now)
+	expiresAt, ok := relayLogStreamTokens[token]
+	if ok && now.After(expiresAt) {
+		delete(relayLogStreamTokens, token)
+		ok = false
+	}
+	relayLogStreamTokensLock.Unlock()
 	return ok
 }
 
@@ -52,6 +60,14 @@ func RelayLogStreamTokenRevoke(token string) {
 	relayLogStreamTokensLock.Lock()
 	delete(relayLogStreamTokens, token)
 	relayLogStreamTokensLock.Unlock()
+}
+
+func cleanupExpiredRelayLogStreamTokensLocked(now time.Time) {
+	for token, expiresAt := range relayLogStreamTokens {
+		if now.After(expiresAt) {
+			delete(relayLogStreamTokens, token)
+		}
+	}
 }
 
 func RelayLogSubscribe() chan model.RelayLog {

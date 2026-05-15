@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/bestruirui/octopus/internal/transformer/inbound/streamagg"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/utils/xurl"
 )
@@ -13,7 +14,7 @@ import (
 // MessagesInbound adapts Google Gemini generateContent / streamGenerateContent to the internal model
 // and converts internal responses back to Gemini JSON (so any upstream channel can be exposed as Gemini).
 type MessagesInbound struct {
-	streamChunks   []*model.InternalLLMResponse
+	streamAgg      *streamagg.Aggregator
 	storedResponse *model.InternalLLMResponse
 }
 
@@ -41,7 +42,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 	if stream.Object == "[DONE]" {
 		return nil, nil
 	}
-	i.streamChunks = append(i.streamChunks, stream)
+	i.aggregateStream(stream)
 	gem := internalToGeminiGenerateContentResponse(stream)
 	body, err := json.Marshal(gem)
 	if err != nil {
@@ -54,106 +55,17 @@ func (i *MessagesInbound) GetInternalResponse(ctx context.Context) (*model.Inter
 	if i.storedResponse != nil {
 		return i.storedResponse, nil
 	}
-	if len(i.streamChunks) == 0 {
+	if i.streamAgg == nil {
 		return nil, nil
 	}
-	return aggregateStreamChunks(i.streamChunks), nil
+	return i.streamAgg.Response(), nil
 }
 
-func aggregateStreamChunks(chunks []*model.InternalLLMResponse) *model.InternalLLMResponse {
-	first := chunks[0]
-	result := &model.InternalLLMResponse{
-		ID:                first.ID,
-		Object:            "chat.completion",
-		Created:           first.Created,
-		Model:             first.Model,
-		SystemFingerprint: first.SystemFingerprint,
-		ServiceTier:       first.ServiceTier,
+func (i *MessagesInbound) aggregateStream(stream *model.InternalLLMResponse) {
+	if i.streamAgg == nil {
+		i.streamAgg = streamagg.New(streamagg.ToolCallNameReplace)
 	}
-	choicesMap := make(map[int]*model.Choice)
-	for _, chunk := range chunks {
-		if chunk.ID != "" {
-			result.ID = chunk.ID
-		}
-		if chunk.Model != "" {
-			result.Model = chunk.Model
-		}
-		if chunk.Usage != nil {
-			result.Usage = chunk.Usage
-		}
-		for _, choice := range chunk.Choices {
-			existing, ok := choicesMap[choice.Index]
-			if !ok {
-				existing = &model.Choice{Index: choice.Index, Message: &model.Message{}}
-				choicesMap[choice.Index] = existing
-			}
-			if choice.Delta != nil {
-				d := choice.Delta
-				if d.Role != "" {
-					existing.Message.Role = d.Role
-				}
-				if d.Content.Content != nil {
-					if existing.Message.Content.Content == nil {
-						existing.Message.Content.Content = new(string)
-					}
-					*existing.Message.Content.Content += *d.Content.Content
-				}
-				if len(d.Content.MultipleContent) > 0 {
-					existing.Message.Content.MultipleContent = append(
-						existing.Message.Content.MultipleContent, d.Content.MultipleContent...,
-					)
-				}
-				if len(d.Images) > 0 {
-					existing.Message.Content.MultipleContent = append(
-						existing.Message.Content.MultipleContent, d.Images...,
-					)
-				}
-				if d.GetReasoningContent() != "" {
-					if existing.Message.ReasoningContent == nil {
-						existing.Message.ReasoningContent = new(string)
-					}
-					*existing.Message.ReasoningContent += d.GetReasoningContent()
-				}
-				for _, tc := range d.ToolCalls {
-					existing.Message.ToolCalls = mergeToolCallDelta(existing.Message.ToolCalls, tc)
-				}
-				if d.Refusal != "" {
-					existing.Message.Refusal = d.Refusal
-				}
-			}
-			if choice.FinishReason != nil {
-				existing.FinishReason = choice.FinishReason
-			}
-		}
-	}
-	result.Choices = make([]model.Choice, 0, len(choicesMap))
-	for idx := 0; idx < len(choicesMap); idx++ {
-		if c, ok := choicesMap[idx]; ok {
-			result.Choices = append(result.Choices, *c)
-		}
-	}
-	return result
-}
-
-func mergeToolCallDelta(toolCalls []model.ToolCall, delta model.ToolCall) []model.ToolCall {
-	for i, tc := range toolCalls {
-		if tc.Index == delta.Index {
-			if delta.ID != "" {
-				toolCalls[i].ID = delta.ID
-			}
-			if delta.Type != "" {
-				toolCalls[i].Type = delta.Type
-			}
-			if delta.Function.Name != "" {
-				toolCalls[i].Function.Name = delta.Function.Name
-			}
-			if delta.Function.Arguments != "" {
-				toolCalls[i].Function.Arguments += delta.Function.Arguments
-			}
-			return toolCalls
-		}
-	}
-	return append(toolCalls, delta)
+	i.streamAgg.Add(stream)
 }
 
 func geminiGenerateContentToInternal(g *model.GeminiGenerateContentRequest) (*model.InternalLLMRequest, error) {

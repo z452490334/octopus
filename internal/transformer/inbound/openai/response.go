@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/bestruirui/octopus/internal/transformer/inbound/streamagg"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/utils/xurl"
 )
@@ -45,8 +46,7 @@ type ResponseInbound struct {
 	// Usage tracking
 	usage *model.Usage
 
-	// Stream chunks storage for aggregation
-	streamChunks []*model.InternalLLMResponse
+	streamAgg *streamagg.Aggregator
 	// storedResponse stores the non-stream response
 	storedResponse *model.InternalLLMResponse
 }
@@ -89,8 +89,7 @@ func (i *ResponseInbound) TransformStream(ctx context.Context, stream *model.Int
 		return []byte("data: [DONE]\n\n"), nil
 	}
 
-	// Store the chunk for aggregation
-	i.streamChunks = append(i.streamChunks, stream)
+	i.aggregateStream(stream)
 
 	var events [][]byte
 
@@ -577,120 +576,21 @@ func (i *ResponseInbound) closeCurrentOutputItem() [][]byte {
 }
 
 // GetInternalResponse returns the complete internal response for logging, statistics, etc.
-// For streaming: aggregates all stored stream chunks into a complete response
-// For non-streaming: returns the stored response
 func (i *ResponseInbound) GetInternalResponse(ctx context.Context) (*model.InternalLLMResponse, error) {
-	// Return stored response for non-stream scenario
 	if i.storedResponse != nil {
 		return i.storedResponse, nil
 	}
-
-	// Aggregate stream chunks for stream scenario
-	if len(i.streamChunks) == 0 {
+	if i.streamAgg == nil {
 		return nil, nil
 	}
+	return i.streamAgg.Response(), nil
+}
 
-	// Use the first chunk as the base
-	firstChunk := i.streamChunks[0]
-	result := &model.InternalLLMResponse{
-		ID:                firstChunk.ID,
-		Object:            "chat.completion",
-		Created:           firstChunk.Created,
-		Model:             firstChunk.Model,
-		SystemFingerprint: firstChunk.SystemFingerprint,
-		ServiceTier:       firstChunk.ServiceTier,
+func (i *ResponseInbound) aggregateStream(stream *model.InternalLLMResponse) {
+	if i.streamAgg == nil {
+		i.streamAgg = streamagg.New(streamagg.ToolCallNameAppend)
 	}
-
-	// Aggregate choices by index
-	choicesMap := make(map[int]*model.Choice)
-
-	for _, chunk := range i.streamChunks {
-		// Update ID and Model if they appear in later chunks
-		if chunk.ID != "" {
-			result.ID = chunk.ID
-		}
-		if chunk.Model != "" {
-			result.Model = chunk.Model
-		}
-
-		// Capture usage from the last chunk that has it
-		if chunk.Usage != nil {
-			result.Usage = chunk.Usage
-		}
-
-		for _, choice := range chunk.Choices {
-			existingChoice, exists := choicesMap[choice.Index]
-			if !exists {
-				existingChoice = &model.Choice{
-					Index:   choice.Index,
-					Message: &model.Message{},
-				}
-				choicesMap[choice.Index] = existingChoice
-			}
-
-			// Aggregate delta content into message
-			if choice.Delta != nil {
-				delta := choice.Delta
-
-				// Set role if present
-				if delta.Role != "" {
-					existingChoice.Message.Role = delta.Role
-				}
-
-				// Append content
-				if delta.Content.Content != nil {
-					if existingChoice.Message.Content.Content == nil {
-						existingChoice.Message.Content.Content = new(string)
-					}
-					*existingChoice.Message.Content.Content += *delta.Content.Content
-				}
-
-				// Append reasoning content
-				if delta.ReasoningContent != nil {
-					if existingChoice.Message.ReasoningContent == nil {
-						existingChoice.Message.ReasoningContent = new(string)
-					}
-					*existingChoice.Message.ReasoningContent += *delta.ReasoningContent
-				}
-
-				// Aggregate tool calls
-				for _, toolCall := range delta.ToolCalls {
-					existingChoice.Message.ToolCalls = mergeToolCall(existingChoice.Message.ToolCalls, toolCall)
-				}
-
-				// Set refusal if present
-				if delta.Refusal != "" {
-					existingChoice.Message.Refusal = delta.Refusal
-				}
-			}
-
-			// Capture finish reason
-			if choice.FinishReason != nil {
-				existingChoice.FinishReason = choice.FinishReason
-			}
-
-			// Capture logprobs
-			if choice.Logprobs != nil {
-				if existingChoice.Logprobs == nil {
-					existingChoice.Logprobs = &model.LogprobsContent{}
-				}
-				existingChoice.Logprobs.Content = append(existingChoice.Logprobs.Content, choice.Logprobs.Content...)
-			}
-		}
-	}
-
-	// Convert map to slice, sorted by index
-	result.Choices = make([]model.Choice, 0, len(choicesMap))
-	for idx := 0; idx < len(choicesMap); idx++ {
-		if choice, exists := choicesMap[idx]; exists {
-			result.Choices = append(result.Choices, *choice)
-		}
-	}
-
-	// Clear stored chunks after aggregation
-	i.streamChunks = nil
-
-	return result, nil
+	i.streamAgg.Add(stream)
 }
 
 // formatSSEData formats data as SSE data line
