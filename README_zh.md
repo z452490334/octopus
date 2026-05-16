@@ -42,6 +42,22 @@ wget https://raw.githubusercontent.com/bestruirui/octopus/refs/heads/dev/docker-
 docker compose up -d
 ```
 
+### 🧪 生产环境性能采集
+
+当 CPU 或内存异常升高时，可在服务器上使用内置脚本采集 pprof、进程、连接和容器信息：
+
+```bash
+sh scripts/collect_debug.sh --cpu
+```
+
+默认采集 `http://127.0.0.1:6060/debug/pprof`。如 pprof 端口不同：
+
+```bash
+sh scripts/collect_debug.sh --pprof-url http://127.0.0.1:6061 --cpu --cpu-seconds 30
+```
+
+脚本会生成 `/tmp/octopus-debug-*.tar.gz`，可用于后续分析。Docker/Podman 部署时需先在系统设置中启用 pprof，并确保容器映射了对应端口。
+
 
 ### 📦 从 Release 下载
 
