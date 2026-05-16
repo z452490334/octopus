@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/debug"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/server/middleware"
@@ -77,6 +78,11 @@ func setSetting(c *gin.Context) {
 			return
 		}
 		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
+	case model.SettingKeyPprofEnabled, model.SettingKeyPprofAddr:
+		if err := debug.ApplySettings(); err != nil {
+			resp.Error(c, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	resp.Success(c, setting)
 }

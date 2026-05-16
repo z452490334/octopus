@@ -5,6 +5,8 @@ services:
        - 'OCTOPUS_GITHUB_REPO=z452490334/octopus'
     ports:
        - '8080:8080'
+       # Optional pprof port. In settings, set pprof addr to 0.0.0.0:6060 before enabling.
+       # - '6060:6060'
     volumes:      
        - '/path/to/data:/app/data'
     container_name: octopus

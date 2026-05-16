@@ -168,6 +168,16 @@
             "hint": "为空禁止跨域，* 允许所有",
             "example": "只允许指定域名: https://example.com,https://example2.com"
         },
+        "pprof": {
+            "enabled": {
+                "label": "启用 pprof 调试",
+                "hint": "开启后可通过 /debug/pprof 采集 Go 运行时信息。Docker 中需要提前映射监听端口。"
+            },
+            "addr": {
+                "label": "pprof 监听地址",
+                "placeholder": "127.0.0.1:6060"
+            }
+        },
         "circuitBreaker": {
             "title": "熔断器配置",
             "threshold": {

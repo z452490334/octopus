@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/bestruirui/octopus/internal/conf"
 	"github.com/bestruirui/octopus/internal/db"
+	"github.com/bestruirui/octopus/internal/debug"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/server"
 	"github.com/bestruirui/octopus/internal/task"
@@ -40,6 +41,11 @@ var startCmd = &cobra.Command{
 			log.Errorf("user init error: %v", err)
 			return
 		}
+
+		if err := debug.ApplySettings(); err != nil {
+			log.Warnf("pprof init skipped: %v", err)
+		}
+		shutdown.Register(debug.Close)
 
 		if err := server.Start(); err != nil {
 			log.Errorf("server start error: %v", err)

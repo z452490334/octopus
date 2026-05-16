@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Monitor, Globe, Clock, Shield, HelpCircle, X } from 'lucide-react';
+import { Monitor, Globe, Clock, Shield, HelpCircle, X, Bug } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/endpoints/setting';
 import { toast } from '@/components/common/Toast';
@@ -18,16 +19,22 @@ export function SettingSystem() {
     const [statsSaveInterval, setStatsSaveInterval] = useState('');
     const [corsAllowOrigins, setCorsAllowOrigins] = useState('');
     const [corsInputValue, setCorsInputValue] = useState('');
+    const [pprofEnabled, setPprofEnabled] = useState(false);
+    const [pprofAddr, setPprofAddr] = useState('');
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
     const initialCorsAllowOrigins = useRef('');
+    const initialPprofEnabled = useRef('false');
+    const initialPprofAddr = useRef('');
 
     useEffect(() => {
         if (settings) {
             const proxy = settings.find(s => s.key === SettingKey.ProxyURL);
             const interval = settings.find(s => s.key === SettingKey.StatsSaveInterval);
             const cors = settings.find(s => s.key === SettingKey.CORSAllowOrigins);
+            const pprofEnabledSetting = settings.find(s => s.key === SettingKey.PprofEnabled);
+            const pprofAddrSetting = settings.find(s => s.key === SettingKey.PprofAddr);
             if (proxy) {
                 queueMicrotask(() => setProxyUrl(proxy.value));
                 initialProxyUrl.current = proxy.value;
@@ -39,6 +46,14 @@ export function SettingSystem() {
             if (cors) {
                 queueMicrotask(() => setCorsAllowOrigins(cors.value));
                 initialCorsAllowOrigins.current = cors.value;
+            }
+            if (pprofEnabledSetting) {
+                queueMicrotask(() => setPprofEnabled(pprofEnabledSetting.value === 'true'));
+                initialPprofEnabled.current = pprofEnabledSetting.value;
+            }
+            if (pprofAddrSetting) {
+                queueMicrotask(() => setPprofAddr(pprofAddrSetting.value));
+                initialPprofAddr.current = pprofAddrSetting.value;
             }
         }
     }, [settings]);
@@ -55,6 +70,10 @@ export function SettingSystem() {
                     initialStatsSaveInterval.current = value;
                 } else if (key === SettingKey.CORSAllowOrigins) {
                     initialCorsAllowOrigins.current = value;
+                } else if (key === SettingKey.PprofEnabled) {
+                    initialPprofEnabled.current = value;
+                } else if (key === SettingKey.PprofAddr) {
+                    initialPprofAddr.current = value;
                 }
             }
         });
@@ -112,6 +131,11 @@ export function SettingSystem() {
     const handleRemoveCorsOrigin = (originToRemove: string) => {
         const nextOrigins = corsAllowOriginsList.filter(origin => origin !== originToRemove);
         saveCorsAllowOrigins(nextOrigins);
+    };
+
+    const handlePprofEnabledChange = (checked: boolean) => {
+        setPprofEnabled(checked);
+        handleSave(SettingKey.PprofEnabled, checked ? 'true' : 'false', initialPprofEnabled.current);
     };
 
     return (
@@ -215,6 +239,39 @@ export function SettingSystem() {
                         </div>
                     </PopoverContent>
                 </Popover>
+            </div>
+
+            {/* pprof 调试 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Bug className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('pprof.enabled.label')}</span>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                {t('pprof.enabled.hint')}
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+                <Switch checked={pprofEnabled} onCheckedChange={handlePprofEnabledChange} />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Bug className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('pprof.addr.label')}</span>
+                </div>
+                <Input
+                    value={pprofAddr}
+                    onChange={(e) => setPprofAddr(e.target.value)}
+                    onBlur={() => handleSave(SettingKey.PprofAddr, pprofAddr, initialPprofAddr.current)}
+                    placeholder={t('pprof.addr.placeholder')}
+                    className="w-48 rounded-xl"
+                />
             </div>
         </div>
     );
