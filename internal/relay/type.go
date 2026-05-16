@@ -12,18 +12,26 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// maxSSEEventSize 定义 SSE 事件的最大大小。
-// 对于图像生成模型（如 gemini-3-pro-image-preview），返回的 base64 编码图像数据
-// 可能非常大（高分辨率图像可能超过 10MB），因此需要设置足够大的缓冲区。
-// 默认 32MB，可通过环境变量 OCTOPUS_RELAY_MAX_SSE_EVENT_SIZE 覆盖。
-var maxSSEEventSize = 32 * 1024 * 1024
+// maxSSEEventSize 定义普通 relay SSE 单事件的最大大小。
+// 普通文本流不应接受几十 MB 的单事件，否则读取、解析、转换时会形成多份大对象。
+var maxSSEEventSize = 4 * 1024 * 1024
+
+// maxImagesSSEEventSize 定义 images relay SSE 单事件的最大大小。
+// 图片流可能携带较大的 base64 数据，因此保留单独较高上限。
+var maxImagesSSEEventSize = 32 * 1024 * 1024
 
 func init() {
-	if raw := strings.TrimSpace(os.Getenv(strings.ToUpper(conf.APP_NAME) + "_RELAY_MAX_SSE_EVENT_SIZE")); raw != "" {
+	maxSSEEventSize = envPositiveInt(strings.ToUpper(conf.APP_NAME)+"_RELAY_MAX_SSE_EVENT_SIZE", maxSSEEventSize)
+	maxImagesSSEEventSize = envPositiveInt(strings.ToUpper(conf.APP_NAME)+"_IMAGES_MAX_SSE_EVENT_SIZE", maxImagesSSEEventSize)
+}
+
+func envPositiveInt(name string, def int) int {
+	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
-			maxSSEEventSize = v
+			return v
 		}
 	}
+	return def
 }
 
 // hopByHopHeaders 定义不应转发的 HTTP 头

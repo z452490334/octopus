@@ -4,14 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
 
+	"github.com/bestruirui/octopus/internal/conf"
 	"github.com/bestruirui/octopus/internal/transformer/inbound/streamagg"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/utils/xurl"
 )
+
+const defaultResponsesStreamMaxFieldBytes = 4 * 1024 * 1024
+
+var responsesStreamMaxFieldBytes = envPositiveInt(strings.ToUpper(conf.APP_NAME)+"_RESPONSES_STREAM_MAX_FIELD_BYTES", defaultResponsesStreamMaxFieldBytes)
+
+const responsesTruncatedSuffix = "...(truncated)"
 
 // ResponseInbound implements the Inbound interface for OpenAI Responses API.
 type ResponseInbound struct {
@@ -250,8 +259,8 @@ func (i *ResponseInbound) handleReasoningContent(content *string) [][]byte {
 		}))
 	}
 
-	// Accumulate reasoning content
-	i.accumulatedReasoning.WriteString(*content)
+	// Accumulate reasoning content for done events, capped to avoid large end-of-stream copies.
+	writeLimited(&i.accumulatedReasoning, *content)
 
 	// Emit reasoning_summary_text.delta
 	events = append(events, i.enqueueEvent(&ResponsesStreamEvent{
@@ -307,8 +316,8 @@ func (i *ResponseInbound) handleTextContent(content *string) [][]byte {
 		}))
 	}
 
-	// Accumulate text content
-	i.accumulatedText.WriteString(*content)
+	// Accumulate text content for done events, capped to avoid large end-of-stream copies.
+	writeLimited(&i.accumulatedText, *content)
 
 	// Emit output_text.delta
 	events = append(events, i.enqueueEvent(&ResponsesStreamEvent{
@@ -378,8 +387,8 @@ func (i *ResponseInbound) handleToolCalls(toolCalls []model.ToolCall) [][]byte {
 			i.outputIndex++
 		}
 
-		// Accumulate arguments
-		i.toolCalls[toolCallIndex].Function.Arguments += tc.Function.Arguments
+		// Accumulate arguments for done events, capped to avoid large end-of-stream copies.
+		i.toolCalls[toolCallIndex].Function.Arguments = appendLimited(i.toolCalls[toolCallIndex].Function.Arguments, tc.Function.Arguments)
 
 		// Emit function_call_arguments.delta
 		if tc.Function.Arguments != "" {
@@ -1316,4 +1325,49 @@ func convertUsageToResponses(usage *model.Usage) *ResponsesUsage {
 
 func generateItemID() string {
 	return fmt.Sprintf("item_%s", lo.RandomString(16, lo.AlphanumericCharset))
+}
+
+func writeLimited(dst *strings.Builder, add string) {
+	if add == "" || dst.Len() >= responsesStreamMaxFieldBytes {
+		return
+	}
+	if dst.Len()+len(add) <= responsesStreamMaxFieldBytes {
+		dst.WriteString(add)
+		return
+	}
+	keep := responsesStreamMaxFieldBytes - dst.Len()
+	if keep < 0 {
+		keep = 0
+	}
+	if keep > len(add) {
+		keep = len(add)
+	}
+	dst.WriteString(add[:keep])
+	dst.WriteString(responsesTruncatedSuffix)
+}
+
+func appendLimited(dst, add string) string {
+	if add == "" || strings.HasSuffix(dst, responsesTruncatedSuffix) {
+		return dst
+	}
+	if len(dst)+len(add) <= responsesStreamMaxFieldBytes {
+		return dst + add
+	}
+	keep := responsesStreamMaxFieldBytes - len(dst)
+	if keep < 0 {
+		keep = 0
+	}
+	if keep > len(add) {
+		keep = len(add)
+	}
+	return dst + add[:keep] + responsesTruncatedSuffix
+}
+
+func envPositiveInt(name string, def int) int {
+	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			return v
+		}
+	}
+	return def
 }

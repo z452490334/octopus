@@ -8,12 +8,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/conf"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/price"
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/utils/log"
 )
+
+const defaultRelayLogContentMaxBytes = 256 * 1024
+
+var relayLogContentMaxBytes = envPositiveInt(strings.ToUpper(conf.APP_NAME)+"_RELAY_LOG_CONTENT_MAX_BYTES", defaultRelayLogContentMaxBytes)
+
+const relayLogTruncatedSuffix = "...(truncated)"
 
 // RelayMetrics 负责最终的日志收集与持久化
 type RelayMetrics struct {
@@ -167,21 +174,21 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		if jsonErr != nil {
 			relayLog.RequestContent = ""
 		} else if m.ParamOverride == "" {
-			relayLog.RequestContent = string(reqJSON)
+			relayLog.RequestContent = truncateForRelayLog(string(reqJSON))
 		} else {
 			var reqMap map[string]any
 			if err := json.Unmarshal(reqJSON, &reqMap); err != nil {
-				relayLog.RequestContent = string(reqJSON)
+				relayLog.RequestContent = truncateForRelayLog(string(reqJSON))
 			} else {
 				var override map[string]any
 				if err := json.Unmarshal([]byte(m.ParamOverride), &override); err != nil {
-					relayLog.RequestContent = string(reqJSON)
+					relayLog.RequestContent = truncateForRelayLog(string(reqJSON))
 				} else {
 					maps.Copy(reqMap, override)
 					if finalJSON, err := json.Marshal(reqMap); err != nil {
-						relayLog.RequestContent = string(reqJSON)
+						relayLog.RequestContent = truncateForRelayLog(string(reqJSON))
 					} else {
-						relayLog.RequestContent = string(finalJSON)
+						relayLog.RequestContent = truncateForRelayLog(string(finalJSON))
 					}
 				}
 			}
@@ -198,7 +205,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 				insert := fmt.Sprintf(`"usage":{"cache_creation_input_tokens":%d,`, m.InternalResponse.Usage.CacheCreationInputTokens)
 				respJSON = []byte(strings.Replace(respStr, old, insert, 1))
 			}
-			relayLog.ResponseContent = string(respJSON)
+			relayLog.ResponseContent = truncateForRelayLog(string(respJSON))
 		}
 	}
 
@@ -210,6 +217,13 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	if logErr := op.RelayLogAdd(ctx, relayLog); logErr != nil {
 		log.Warnf("failed to save relay log: %v", logErr)
 	}
+}
+
+func truncateForRelayLog(s string) string {
+	if relayLogContentMaxBytes <= 0 || len(s) <= relayLogContentMaxBytes {
+		return s
+	}
+	return s[:relayLogContentMaxBytes] + relayLogTruncatedSuffix
 }
 
 // filterResponseForLog 创建响应的浅拷贝，过滤掉 images、MultipleContent 中的图片数据和 Audio.Data 以减少存储压力

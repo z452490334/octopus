@@ -392,15 +392,28 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 		err  error
 	}
 	results := make(chan sseReadResult, 1)
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
 		defer close(results)
 		readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
 		for ev, err := range sse.Read(response.Body, readCfg) {
+			result := sseReadResult{data: ev.Data, err: err}
 			if err != nil {
-				results <- sseReadResult{err: err}
+				select {
+				case results <- result:
+				case <-done:
+				case <-ctx.Done():
+				}
 				return
 			}
-			results <- sseReadResult{data: ev.Data}
+			select {
+			case results <- result:
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
@@ -420,6 +433,7 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
+			_ = response.Body.Close()
 			return nil
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds), switching channel", ra.firstTokenTimeOutSec)

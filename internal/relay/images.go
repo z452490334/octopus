@@ -376,10 +376,10 @@ func buildImagesResponseContentForLog(stream bool, upstreamCT string, usage *ima
 	}
 	// 不记录 b64_json，仅记录 usage
 	type respForLog struct {
-		Stream      bool        `json:"stream"`
-		ContentType string      `json:"content_type,omitempty"`
+		Stream      bool         `json:"stream"`
+		ContentType string       `json:"content_type,omitempty"`
 		Usage       *imagesUsage `json:"usage,omitempty"`
-		Note        string      `json:"note,omitempty"`
+		Note        string       `json:"note,omitempty"`
 	}
 	obj := respForLog{
 		Stream:      stream,
@@ -726,20 +726,39 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 	}
 
 	results := make(chan lineResult, 1)
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
 		defer close(results)
 		br := bufio.NewReaderSize(respUp.Body, 64*1024)
 		for {
-			line, err := readLineLimited(br, maxSSEEventSize)
+			line, err := readLineLimited(br, maxImagesSSEEventSize)
+			result := lineResult{line: line}
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					results <- lineResult{eof: true}
+					result.eof = true
+					select {
+					case results <- result:
+					case <-done:
+					case <-ctx.Done():
+					}
 					return
 				}
-				results <- lineResult{err: err}
+				result.err = err
+				select {
+				case results <- result:
+				case <-done:
+				case <-ctx.Done():
+				}
 				return
 			}
-			results <- lineResult{line: line}
+			select {
+			case results <- result:
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
@@ -756,8 +775,8 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 	}
 
 	var (
-		firstWrite      = true
-		currentEvent    string
+		firstWrite       = true
+		currentEvent     string
 		completedScanner = newUsageScanner()
 	)
 
@@ -765,6 +784,7 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
+			_ = respUp.Body.Close()
 			return completedScanner.Usage(), c.Writer.Written(), nil
 
 		case <-firstTokenC:

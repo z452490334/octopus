@@ -1,6 +1,19 @@
 package streamagg
 
-import "github.com/bestruirui/octopus/internal/transformer/model"
+import (
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/bestruirui/octopus/internal/conf"
+	"github.com/bestruirui/octopus/internal/transformer/model"
+)
+
+const defaultMaxAggregatedFieldBytes = 4 * 1024 * 1024
+
+var maxAggregatedFieldBytes = envPositiveInt(strings.ToUpper(conf.APP_NAME)+"_STREAM_AGG_MAX_FIELD_BYTES", defaultMaxAggregatedFieldBytes)
+
+const truncatedSuffix = "...(truncated)"
 
 type ToolCallNameMergeMode int
 
@@ -100,7 +113,7 @@ func (a *Aggregator) mergeDelta(dst *model.Message, delta *model.Message) {
 		if dst.Content.Content == nil {
 			dst.Content.Content = new(string)
 		}
-		*dst.Content.Content += *delta.Content.Content
+		*dst.Content.Content = appendLimited(*dst.Content.Content, *delta.Content.Content)
 	}
 
 	if len(delta.Content.MultipleContent) > 0 {
@@ -114,7 +127,7 @@ func (a *Aggregator) mergeDelta(dst *model.Message, delta *model.Message) {
 		if dst.ReasoningContent == nil {
 			dst.ReasoningContent = new(string)
 		}
-		*dst.ReasoningContent += reasoning
+		*dst.ReasoningContent = appendLimited(*dst.ReasoningContent, reasoning)
 	}
 
 	for _, toolCall := range delta.ToolCalls {
@@ -143,10 +156,36 @@ func (a *Aggregator) mergeToolCall(toolCalls []model.ToolCall, delta model.ToolC
 				}
 			}
 			if delta.Function.Arguments != "" {
-				toolCalls[i].Function.Arguments += delta.Function.Arguments
+				toolCalls[i].Function.Arguments = appendLimited(toolCalls[i].Function.Arguments, delta.Function.Arguments)
 			}
 			return toolCalls
 		}
 	}
 	return append(toolCalls, delta)
+}
+
+func appendLimited(dst, add string) string {
+	if maxAggregatedFieldBytes <= 0 || add == "" || strings.HasSuffix(dst, truncatedSuffix) {
+		return dst
+	}
+	if len(dst)+len(add) <= maxAggregatedFieldBytes {
+		return dst + add
+	}
+	keep := maxAggregatedFieldBytes - len(dst)
+	if keep < 0 {
+		keep = 0
+	}
+	if keep > len(add) {
+		keep = len(add)
+	}
+	return dst + add[:keep] + truncatedSuffix
+}
+
+func envPositiveInt(name string, def int) int {
+	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			return v
+		}
+	}
+	return def
 }
