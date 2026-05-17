@@ -18,6 +18,7 @@ export const SettingKey = {
     SyncLLMInterval: 'sync_llm_interval',
     RelayLogKeepEnabled: 'relay_log_keep_enabled',
     RelayLogKeepPeriod: 'relay_log_keep_period',
+    RelayDirectStreamMinBytes: 'relay_direct_stream_min_bytes',
     CORSAllowOrigins: 'cors_allow_origins',
     PprofEnabled: 'pprof_enabled',
     PprofAddr: 'pprof_addr',

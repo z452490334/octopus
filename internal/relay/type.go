@@ -8,6 +8,7 @@ import (
 	"github.com/bestruirui/octopus/internal/conf"
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
+	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	"github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/gin-gonic/gin"
 )
@@ -63,6 +64,7 @@ var hopByHopHeaders = map[string]bool{
 
 type relayRequest struct {
 	c               *gin.Context
+	inboundType     inbound.InboundType
 	inAdapter       model.Inbound
 	internalRequest *model.InternalLLMRequest
 	metrics         *RelayMetrics

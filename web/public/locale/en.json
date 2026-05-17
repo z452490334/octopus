@@ -163,6 +163,11 @@
             "label": "Stats Save Interval",
             "placeholder": "Enter interval in minutes"
         },
+        "relayDirectStreamMinBytes": {
+            "label": "Large Response Passthrough Threshold (bytes)",
+            "placeholder": "0 disables it",
+            "hint": "For compatible non-streaming protocols, responses above this size are forwarded in chunks to reduce memory usage. Set 0 to disable."
+        },
         "corsAllowOrigins": {
             "label": "CORS Allowed Origins",
             "hint": "Empty = deny all, * = allow all",

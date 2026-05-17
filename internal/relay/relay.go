@@ -64,6 +64,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	// 请求级上下文
 	req := &relayRequest{
 		c:               c,
+		inboundType:     inboundType,
 		inAdapter:       inAdapter,
 		internalRequest: internalRequest,
 		metrics:         metrics,
@@ -332,6 +333,12 @@ func (ra *relayAttempt) forward() (int, error) {
 		}
 		return response.StatusCode, nil
 	}
+	if prefix, ok := ra.shouldDirectStreamResponse(response); ok {
+		if err := ra.handleDirectStreamResponse(ctx, response, prefix); err != nil {
+			return 0, err
+		}
+		return response.StatusCode, nil
+	}
 	if err := ra.handleResponse(ctx, response); err != nil {
 		return 0, err
 	}
@@ -492,6 +499,114 @@ func (ra *relayAttempt) transformStreamData(ctx context.Context, data string) ([
 	}
 
 	return inStream, nil
+}
+
+func (ra *relayAttempt) shouldDirectStreamResponse(response *http.Response) ([]byte, bool) {
+	if response == nil || response.Body == nil {
+		return nil, false
+	}
+	threshold, err := op.SettingGetInt(dbmodel.SettingKeyRelayDirectStreamMinBytes)
+	if err != nil || threshold <= 0 {
+		return nil, false
+	}
+	if !directStreamCompatible(ra.inboundType, ra.channel.Type) {
+		return nil, false
+	}
+	if response.ContentLength > 0 && response.ContentLength <= int64(threshold) {
+		return nil, false
+	}
+	if response.ContentLength > int64(threshold) {
+		return nil, true
+	}
+
+	prefix, err := readResponsePrefix(response, threshold)
+	if err != nil {
+		log.Warnf("failed to inspect response size: %v", err)
+		response.Body = io.NopCloser(bytes.NewReader(prefix))
+		return nil, false
+	}
+	if len(prefix) <= threshold {
+		response.Body = io.NopCloser(bytes.NewReader(prefix))
+		return nil, false
+	}
+	return prefix, true
+}
+
+func directStreamCompatible(inboundType inbound.InboundType, outboundType outbound.OutboundType) bool {
+	switch inboundType {
+	case inbound.InboundTypeOpenAIChat:
+		return outboundType == outbound.OutboundTypeOpenAIChat
+	case inbound.InboundTypeOpenAIResponse:
+		return outboundType == outbound.OutboundTypeOpenAIResponse
+	case inbound.InboundTypeAnthropic:
+		return outboundType == outbound.OutboundTypeAnthropic
+	case inbound.InboundTypeGemini:
+		return outboundType == outbound.OutboundTypeGemini
+	case inbound.InboundTypeOpenAIEmbedding:
+		return outboundType == outbound.OutboundTypeOpenAIEmbedding
+	default:
+		return false
+	}
+}
+
+func readResponsePrefix(response *http.Response, threshold int) ([]byte, error) {
+	prefix, err := io.ReadAll(io.LimitReader(response.Body, int64(threshold)+1))
+	if err == nil && len(prefix) <= threshold {
+		return prefix, nil
+	}
+	if err != nil && err != io.EOF {
+		return prefix, err
+	}
+	return prefix, nil
+}
+
+func (ra *relayAttempt) handleDirectStreamResponse(ctx context.Context, response *http.Response, prefix []byte) error {
+	log.Infof("direct streaming upstream response: content_length=%d, channel=%s", response.ContentLength, ra.channel.Name)
+	copyResponseHeaders(ra.c.Writer.Header(), response.Header)
+	ra.c.Status(response.StatusCode)
+	ra.c.Writer.WriteHeaderNow()
+	if len(prefix) > 0 {
+		if _, err := ra.c.Writer.Write(prefix); err != nil {
+			return err
+		}
+		ra.c.Writer.Flush()
+	}
+
+	buf := make([]byte, 32*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			log.Infof("client disconnected, stopping direct stream")
+			return nil
+		default:
+		}
+
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := ra.c.Writer.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			ra.c.Writer.Flush()
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+func copyResponseHeaders(dst, src http.Header) {
+	for key, values := range src {
+		lower := strings.ToLower(key)
+		if hopByHopHeaders[lower] || lower == "content-length" {
+			continue
+		}
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
 }
 
 // handleResponse 处理非流式响应

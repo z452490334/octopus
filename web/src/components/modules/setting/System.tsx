@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Monitor, Globe, Clock, Shield, HelpCircle, X, Bug } from 'lucide-react';
+import { Monitor, Globe, Clock, Shield, HelpCircle, X, Bug, Radio } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -19,12 +19,14 @@ export function SettingSystem() {
     const [statsSaveInterval, setStatsSaveInterval] = useState('');
     const [corsAllowOrigins, setCorsAllowOrigins] = useState('');
     const [corsInputValue, setCorsInputValue] = useState('');
+    const [relayDirectStreamMinBytes, setRelayDirectStreamMinBytes] = useState('0');
     const [pprofEnabled, setPprofEnabled] = useState(false);
     const [pprofAddr, setPprofAddr] = useState('');
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
     const initialCorsAllowOrigins = useRef('');
+    const initialRelayDirectStreamMinBytes = useRef('0');
     const initialPprofEnabled = useRef('false');
     const initialPprofAddr = useRef('');
 
@@ -33,6 +35,7 @@ export function SettingSystem() {
             const proxy = settings.find(s => s.key === SettingKey.ProxyURL);
             const interval = settings.find(s => s.key === SettingKey.StatsSaveInterval);
             const cors = settings.find(s => s.key === SettingKey.CORSAllowOrigins);
+            const relayDirectStream = settings.find(s => s.key === SettingKey.RelayDirectStreamMinBytes);
             const pprofEnabledSetting = settings.find(s => s.key === SettingKey.PprofEnabled);
             const pprofAddrSetting = settings.find(s => s.key === SettingKey.PprofAddr);
             if (proxy) {
@@ -46,6 +49,10 @@ export function SettingSystem() {
             if (cors) {
                 queueMicrotask(() => setCorsAllowOrigins(cors.value));
                 initialCorsAllowOrigins.current = cors.value;
+            }
+            if (relayDirectStream) {
+                queueMicrotask(() => setRelayDirectStreamMinBytes(relayDirectStream.value));
+                initialRelayDirectStreamMinBytes.current = relayDirectStream.value;
             }
             if (pprofEnabledSetting) {
                 queueMicrotask(() => setPprofEnabled(pprofEnabledSetting.value === 'true'));
@@ -70,6 +77,8 @@ export function SettingSystem() {
                     initialStatsSaveInterval.current = value;
                 } else if (key === SettingKey.CORSAllowOrigins) {
                     initialCorsAllowOrigins.current = value;
+                } else if (key === SettingKey.RelayDirectStreamMinBytes) {
+                    initialRelayDirectStreamMinBytes.current = value;
                 } else if (key === SettingKey.PprofEnabled) {
                     initialPprofEnabled.current = value;
                 } else if (key === SettingKey.PprofAddr) {
@@ -172,6 +181,33 @@ export function SettingSystem() {
                     onChange={(e) => setStatsSaveInterval(e.target.value)}
                     onBlur={() => handleSave('stats_save_interval', statsSaveInterval, initialStatsSaveInterval.current)}
                     placeholder={t('statsSaveInterval.placeholder')}
+                    className="w-48 rounded-xl"
+                />
+            </div>
+
+            {/* 大响应直通 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Radio className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm font-medium">{t('relayDirectStreamMinBytes.label')}</span>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                {t('relayDirectStreamMinBytes.hint')}
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+                <Input
+                    type="number"
+                    min="0"
+                    value={relayDirectStreamMinBytes}
+                    onChange={(e) => setRelayDirectStreamMinBytes(e.target.value)}
+                    onBlur={() => handleSave(SettingKey.RelayDirectStreamMinBytes, relayDirectStreamMinBytes, initialRelayDirectStreamMinBytes.current)}
+                    placeholder={t('relayDirectStreamMinBytes.placeholder')}
                     className="w-48 rounded-xl"
                 />
             </div>

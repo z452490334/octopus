@@ -163,6 +163,11 @@
             "label": "统计保存周期（分钟）",
             "placeholder": "请输入周期（分钟）"
         },
+        "relayDirectStreamMinBytes": {
+            "label": "大响应直通阈值（字节）",
+            "placeholder": "0 表示关闭",
+            "hint": "非流式响应超过该大小且协议兼容时，直接分块转发上游响应，降低内存占用；0 表示关闭。"
+        },
         "corsAllowOrigins": {
             "label": "CORS 跨域白名单",
             "hint": "为空禁止跨域，* 允许所有",

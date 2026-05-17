@@ -163,6 +163,11 @@
             "label": "統計保存週期（分鐘）",
             "placeholder": "請輸入週期（分鐘）"
         },
+        "relayDirectStreamMinBytes": {
+            "label": "大回應直通閾值（位元組）",
+            "placeholder": "0 表示關閉",
+            "hint": "非串流回應超過該大小且協議相容時，直接分塊轉發上游回應，降低記憶體占用；0 表示關閉。"
+        },
         "corsAllowOrigins": {
             "label": "CORS 跨網域白名單",
             "hint": "為空禁止跨網域，* 允許所有",
